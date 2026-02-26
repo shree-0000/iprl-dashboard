@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IPRL CNC Line — MES Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; color: #1a1a2e; }
+
+  .header {
+    background: #1a1a2e;
+    color: #fff;
+    padding: 16px 32px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .header h1 { font-size: 20px; font-weight: 600; }
+  .header .meta { font-size: 13px; color: #a0a0b8; }
+  .header .meta span { margin-left: 16px; }
+
+  .filters {
+    background: #fff;
+    padding: 12px 32px;
+    border-bottom: 1px solid #e0e0e0;
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    font-size: 13px;
+  }
+  .filters label { color: #666; }
+  .filters select, .filters input {
+    padding: 6px 10px;
+    border: 1px solid #d0d0d0;
+    border-radius: 6px;
+    font-size: 13px;
+    background: #fff;
+  }
+
+  .content { padding: 24px 32px; max-width: 1400px; margin: 0 auto; }
+
+  /* KPI Cards */
+  .kpi-row {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .kpi-card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .kpi-card .label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+  .kpi-card .value { font-size: 28px; font-weight: 700; }
+  .kpi-card .sub { font-size: 12px; color: #888; margin-top: 4px; }
+  .kpi-card.green .value { color: #16a34a; }
+  .kpi-card.amber .value { color: #d97706; }
+  .kpi-card.red .value { color: #dc2626; }
+  .kpi-card.blue .value { color: #2563eb; }
+
+  /* Machine Status */
+  .machine-row {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .machine-card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    border-left: 4px solid #16a34a;
+  }
+  .machine-card.idle { border-left-color: #d97706; }
+  .machine-card.down { border-left-color: #dc2626; }
+  .machine-card h3 { font-size: 15px; margin-bottom: 12px; }
+  .machine-card .status-badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-left: 8px;
+  }
+  .machine-card .status-badge.running { background: #dcfce7; color: #16a34a; }
+  .machine-card .status-badge.idle-badge { background: #fef3c7; color: #d97706; }
+  .machine-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-top: 12px;
+  }
+  .machine-stats .stat .stat-label { font-size: 11px; color: #888; }
+  .machine-stats .stat .stat-value { font-size: 18px; font-weight: 600; }
+
+  /* Chart Grid */
+  .chart-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .chart-card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .chart-card.full-width { grid-column: 1 / -1; }
+  .chart-card h3 { font-size: 14px; font-weight: 600; margin-bottom: 16px; color: #333; }
+  .chart-card canvas { max-height: 280px; }
+
+  /* Work Order Table */
+  .wo-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .wo-table th {
+    text-align: left;
+    padding: 10px 12px;
+    background: #f8f9fa;
+    border-bottom: 2px solid #e0e0e0;
+    font-weight: 600;
+    color: #555;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  .wo-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #f0f0f0;
+  }
+  .wo-table tr:hover { background: #f8f9fa; }
+  .wo-status {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .wo-status.in-progress { background: #dbeafe; color: #2563eb; }
+  .wo-status.completed { background: #dcfce7; color: #16a34a; }
+  .wo-status.pending { background: #f3f4f6; color: #6b7280; }
+
+  .section-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    color: #1a1a2e;
+  }
+
+  .demo-badge {
+    background: #fbbf24;
+    color: #1a1a2e;
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+
+  .phase-tag {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    vertical-align: middle;
+    margin-left: 6px;
+  }
+  .phase-tag.p1 { background: #dbeafe; color: #2563eb; }
+  .phase-tag.p2 { background: #f3e8ff; color: #7c3aed; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>IPRL CNC Line — Production Dashboard</h1>
+    <div class="meta">
+      Machines 86, 87 &nbsp;|&nbsp; Engine Ring Line
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:16px;">
+    <span class="demo-badge">DEMO — SAMPLE DATA</span>
+  </div>
+</div>
+
+<div class="filters">
+  <label>Date:</label>
+  <input type="date" value="2026-02-25">
+  <label>Shift:</label>
+  <select>
+    <option>All Shifts</option>
+    <option>Shift A (6:00–14:00)</option>
+    <option>Shift B (14:00–22:00)</option>
+    <option>Shift C (22:00–6:00)</option>
+  </select>
+  <label>Machine:</label>
+  <select>
+    <option>All Machines</option>
+    <option>Machine 86</option>
+    <option>Machine 87</option>
+  </select>
+</div>
+
+<div class="content">
+
+  <!-- KPI Cards -->
+  <div class="kpi-row">
+    <div class="kpi-card blue">
+      <div class="label">Today's Production</div>
+      <div class="value">187</div>
+      <div class="sub">Target: 210 rings</div>
+    </div>
+    <div class="kpi-card amber">
+      <div class="label">Plan vs Actual <span class="phase-tag p1">Phase 1</span></div>
+      <div class="value">89.0%</div>
+      <div class="sub">21 rings behind target</div>
+    </div>
+    <div class="kpi-card green">
+      <div class="label">First Pass Yield <span class="phase-tag p1">Phase 1</span></div>
+      <div class="value">96.2%</div>
+      <div class="sub">7 rejected out of 187</div>
+    </div>
+    <div class="kpi-card red">
+      <div class="label">Defect Rate <span class="phase-tag p1">Phase 1</span></div>
+      <div class="value">3.7%</div>
+      <div class="sub">CNC: 4 | Measurement: 3</div>
+    </div>
+    <div class="kpi-card amber">
+      <div class="label">OEE <span class="phase-tag p2">Phase 2</span></div>
+      <div class="value">72.4%</div>
+      <div class="sub">A: 85% | P: 89% | Q: 96%</div>
+    </div>
+  </div>
+
+  <!-- Machine Status Cards -->
+  <div class="section-title">Machine Status <span class="phase-tag p2">Phase 2 — Real-time</span></div>
+  <div class="machine-row">
+    <div class="machine-card">
+      <h3>Machine 86 <span class="status-badge running">RUNNING</span></h3>
+      <div class="machine-stats">
+        <div class="stat">
+          <div class="stat-label">Today's Count</div>
+          <div class="stat-value">98</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Rejections</div>
+          <div class="stat-value" style="color:#dc2626;">3</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Cycle Time</div>
+          <div class="stat-value">4.2m</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Utilization</div>
+          <div class="stat-value">87%</div>
+        </div>
+      </div>
+    </div>
+    <div class="machine-card idle">
+      <h3>Machine 87 <span class="status-badge idle-badge">CHANGEOVER</span></h3>
+      <div class="machine-stats">
+        <div class="stat">
+          <div class="stat-label">Today's Count</div>
+          <div class="stat-value">89</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Rejections</div>
+          <div class="stat-value" style="color:#dc2626;">4</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Cycle Time</div>
+          <div class="stat-value">4.5m</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Utilization</div>
+          <div class="stat-value">79%</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Charts Row 1 -->
+  <div class="chart-grid">
+    <div class="chart-card">
+      <h3>Plan vs Actual — Last 7 Days <span class="phase-tag p1">Phase 1</span></h3>
+      <canvas id="planVsActual"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>Shift-wise Production — Today <span class="phase-tag p1">Phase 1</span></h3>
+      <canvas id="shiftProduction"></canvas>
+    </div>
+  </div>
+
+  <!-- Charts Row 2 -->
+  <div class="chart-grid">
+    <div class="chart-card">
+      <h3>Top Defects — Pareto (This Month) <span class="phase-tag p1">Phase 1</span></h3>
+      <canvas id="defectPareto"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>Daily Defect Trend — Last 7 Days <span class="phase-tag p1">Phase 1</span></h3>
+      <canvas id="defectTrend"></canvas>
+    </div>
+  </div>
+
+  <!-- Charts Row 3 -->
+  <div class="chart-grid">
+    <div class="chart-card">
+      <h3>Daily Production Trend — Last 30 Days <span class="phase-tag p1">Phase 1</span></h3>
+      <canvas id="productionTrend"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>OEE Breakdown — Last 7 Days <span class="phase-tag p2">Phase 2</span></h3>
+      <canvas id="oeeBreakdown"></canvas>
+    </div>
+  </div>
+
+  <!-- Work Orders Table -->
+  <div class="chart-card full-width" style="margin-bottom:24px;">
+    <h3>Active Work Orders <span class="phase-tag p1">Phase 1</span></h3>
+    <table class="wo-table">
+      <thead>
+        <tr>
+          <th>Work Order</th>
+          <th>Part</th>
+          <th>Planned Qty</th>
+          <th>Produced</th>
+          <th>Rejected</th>
+          <th>Yield</th>
+          <th>Stage</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>WO-2026-0142</strong></td>
+          <td>Engine Ring — Type A (76mm)</td>
+          <td>500</td>
+          <td>487</td>
+          <td>18</td>
+          <td>96.3%</td>
+          <td>Labeling</td>
+          <td><span class="wo-status in-progress">In Progress</span></td>
+        </tr>
+        <tr>
+          <td><strong>WO-2026-0143</strong></td>
+          <td>Engine Ring — Type B (82mm)</td>
+          <td>300</td>
+          <td>156</td>
+          <td>5</td>
+          <td>96.8%</td>
+          <td>CNC Machining</td>
+          <td><span class="wo-status in-progress">In Progress</span></td>
+        </tr>
+        <tr>
+          <td><strong>WO-2026-0141</strong></td>
+          <td>Engine Ring — Type A (76mm)</td>
+          <td>400</td>
+          <td>400</td>
+          <td>12</td>
+          <td>97.0%</td>
+          <td>—</td>
+          <td><span class="wo-status completed">Completed</span></td>
+        </tr>
+        <tr>
+          <td><strong>WO-2026-0144</strong></td>
+          <td>Engine Ring — Type C (90mm)</td>
+          <td>250</td>
+          <td>0</td>
+          <td>0</td>
+          <td>—</td>
+          <td>—</td>
+          <td><span class="wo-status pending">Pending</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div style="text-align:center;padding:24px;color:#aaa;font-size:12px;">
+    DEMO DASHBOARD — Sample data for illustration purposes | Cognaize &copy; 2026
+  </div>
+</div>
+
+<script>
+const colors = {
+  blue: '#2563eb',
+  blueLight: '#93c5fd',
+  green: '#16a34a',
+  greenLight: '#86efac',
+  red: '#dc2626',
+  redLight: '#fca5a5',
+  amber: '#d97706',
+  amberLight: '#fcd34d',
+  purple: '#7c3aed',
+  purpleLight: '#c4b5fd',
+  gray: '#9ca3af',
+};
+
+// Plan vs Actual — Last 7 days
+new Chart(document.getElementById('planVsActual'), {
+  type: 'bar',
+  data: {
+    labels: ['19 Feb', '20 Feb', '21 Feb', '22 Feb', '23 Feb', '24 Feb', '25 Feb'],
+    datasets: [
+      { label: 'Planned', data: [210, 210, 210, 210, 210, 210, 210], backgroundColor: colors.blueLight, borderRadius: 4 },
+      { label: 'Actual', data: [198, 205, 195, 212, 201, 208, 187], backgroundColor: colors.blue, borderRadius: 4 }
+    ]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, pointStyle: 'rect' } } },
+    scales: { y: { beginAtZero: true, title: { display: true, text: 'Rings' } } }
+  }
+});
+
+// Shift-wise Production
+new Chart(document.getElementById('shiftProduction'), {
+  type: 'bar',
+  data: {
+    labels: ['Machine 86', 'Machine 87'],
+    datasets: [
+      { label: 'Shift A', data: [38, 35], backgroundColor: colors.blue, borderRadius: 4 },
+      { label: 'Shift B', data: [34, 32], backgroundColor: colors.green, borderRadius: 4 },
+      { label: 'Shift C', data: [26, 22], backgroundColor: colors.amber, borderRadius: 4 }
+    ]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, pointStyle: 'rect' } } },
+    scales: { y: { beginAtZero: true, title: { display: true, text: 'Rings' } } }
+  }
+});
+
+// Defect Pareto
+const defectLabels = ['Dimensional OOS', 'Surface Finish', 'Tool Marks', 'Concentricity', 'Burr', 'Other'];
+const defectCounts = [28, 19, 14, 8, 5, 3];
+const totalDefects = defectCounts.reduce((a, b) => a + b, 0);
+let cumulative = 0;
+const cumulativePct = defectCounts.map(d => { cumulative += d; return Math.round((cumulative / totalDefects) * 100); });
+
+new Chart(document.getElementById('defectPareto'), {
+  type: 'bar',
+  data: {
+    labels: defectLabels,
+    datasets: [
+      { label: 'Count', data: defectCounts, backgroundColor: colors.red, borderRadius: 4, yAxisID: 'y' },
+      { label: 'Cumulative %', data: cumulativePct, type: 'line', borderColor: colors.blue, backgroundColor: 'transparent', pointBackgroundColor: colors.blue, tension: 0.3, yAxisID: 'y1' }
+    ]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { position: 'bottom', labels: { usePointStyle: true } } },
+    scales: {
+      y: { beginAtZero: true, title: { display: true, text: 'Count' } },
+      y1: { position: 'right', min: 0, max: 100, title: { display: true, text: '%' }, grid: { display: false } }
+    }
+  }
+});
+
+// Defect Trend
+new Chart(document.getElementById('defectTrend'), {
+  type: 'line',
+  data: {
+    labels: ['19 Feb', '20 Feb', '21 Feb', '22 Feb', '23 Feb', '24 Feb', '25 Feb'],
+    datasets: [
+      { label: 'M86 Defect %', data: [3.2, 2.8, 4.1, 3.5, 2.9, 3.1, 3.1], borderColor: colors.blue, backgroundColor: 'transparent', tension: 0.3, pointBackgroundColor: colors.blue },
+      { label: 'M87 Defect %', data: [4.0, 3.5, 3.8, 3.2, 4.5, 3.0, 4.5], borderColor: colors.red, backgroundColor: 'transparent', tension: 0.3, pointBackgroundColor: colors.red }
+    ]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { position: 'bottom', labels: { usePointStyle: true } } },
+    scales: { y: { beginAtZero: true, title: { display: true, text: 'Defect %' } } }
+  }
+});
+
+// Production Trend — 30 days
+const prodDays = [];
+const prodData = [];
+const prodTarget = [];
+for (let i = 29; i >= 0; i--) {
+  const d = new Date(2026, 1, 25 - i);
+  const day = d.getDay();
+  prodDays.push(d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }));
+  if (day === 0) { prodData.push(0); prodTarget.push(0); }
+  else { prodData.push(Math.round(190 + Math.random() * 30)); prodTarget.push(210); }
+}
+
+new Chart(document.getElementById('productionTrend'), {
+  type: 'line',
+  data: {
+    labels: prodDays,
+    datasets: [
+      { label: 'Actual', data: prodData, borderColor: colors.blue, backgroundColor: 'rgba(37,99,235,0.1)', fill: true, tension: 0.3, pointRadius: 2 },
+      { label: 'Target', data: prodTarget, borderColor: colors.gray, borderDash: [5, 5], backgroundColor: 'transparent', pointRadius: 0 }
+    ]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { position: 'bottom', labels: { usePointStyle: true } } },
+    scales: {
+      y: { beginAtZero: true, title: { display: true, text: 'Rings' } },
+      x: { ticks: { maxRotation: 45, font: { size: 10 } } }
+    }
+  }
+});
+
+// OEE Breakdown
+new Chart(document.getElementById('oeeBreakdown'), {
+  type: 'bar',
+  data: {
+    labels: ['19 Feb', '20 Feb', '21 Feb', '22 Feb', '23 Feb', '24 Feb', '25 Feb'],
+    datasets: [
+      { label: 'Availability', data: [88, 85, 82, 87, 84, 86, 85], backgroundColor: colors.blue, borderRadius: 4 },
+      { label: 'Performance', data: [91, 89, 88, 90, 87, 90, 89], backgroundColor: colors.green, borderRadius: 4 },
+      { label: 'Quality', data: [97, 97, 96, 97, 96, 97, 96], backgroundColor: colors.purple, borderRadius: 4 }
+    ]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, pointStyle: 'rect' } } },
+    scales: { y: { min: 70, max: 100, title: { display: true, text: '%' } } }
+  }
+});
+</script>
+</body>
+</html>
